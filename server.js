@@ -104,7 +104,7 @@ app.post('/api/login', (req, res) => {
 });
 app.post('/api/logout', (req, res) => {res.setHeader('Set-Cookie','pg_auth=; Path=/; Max-Age=0');req.session.destroy(() => res.json({ ok: true }))});
 app.get('/api/me', (req, res) => res.json(tokenUser(req)||req.session.user||null));
-app.get('/api/matches', requireOperator, (_, res) => res.json(db.matches.map(publicMatch)));
+app.get('/api/matches', requireOperator, (req, res) => res.json(db.matches.filter(m=>req.query.archived==='1'?m.archived:!m.archived).map(publicMatch)));
 app.get('/api/public/match/:code', (req,res)=>{const m=db.matches.find(x=>x.code===req.params.code);if(!m)return res.status(404).json({error:'Kode tidak ditemukan'});res.json(publicMatch(m));});
 app.get('/api/public/match-id/:id', (req,res)=>{const m=currentMatch(req.params.id);if(!m)return res.status(404).json({error:'Tidak ditemukan'});res.json(publicMatch(m));});
 function validJudge(m,slot,deviceId){return m?.judges?.[slot]?.deviceId===deviceId}
@@ -135,6 +135,8 @@ app.post('/api/matches/:id/reset', requireOperator, (req, res) => {
   Object.assign(m, {status:'menunggu',round:1,timerRemainingMs:m.roundDurationMs,timerStartedAt:null,events:[],validated:[],startedAt:null,endedAt:null,winner:null,certified:false}); Object.assign(m.red,{score:0,warnings:0,penalties:0}); Object.assign(m.blue,{score:0,warnings:0,penalties:0});
   audit('RESET',m.id,{},u.username); emitMatch(m); res.json(publicMatch(m));
 });
+app.post('/api/matches/:id/archive',requireOperator,(req,res)=>{const m=currentMatch(req.params.id),u=db.users.find(x=>x.id===(req.operator?.id||'operator'));if(!m)return res.status(404).json({error:'Tidak ditemukan'});if(m.status==='berlangsung')return res.status(409).json({error:'Akhiri pertandingan sebelum menghapus'});if(!bcrypt.compareSync(req.body.password||'',u.passwordHash))return res.status(403).json({error:'Password operator salah'});m.archived=true;m.archivedAt=now();audit('ARSIPKAN_PERTANDINGAN',m.id,{code:m.code},u.username);res.json({ok:true});});
+app.post('/api/matches/archive-finished',requireOperator,(req,res)=>{const u=db.users.find(x=>x.id===(req.operator?.id||'operator'));if(!bcrypt.compareSync(req.body.password||'',u.passwordHash))return res.status(403).json({error:'Password operator salah'});let count=0;for(const m of db.matches){if(!m.archived&&['selesai','dibatalkan'].includes(m.status)){m.archived=true;m.archivedAt=now();count++}}audit('ARSIPKAN_EVENT_LAMA',null,{count},u.username);res.json({ok:true,count});});
 app.post('/api/matches/:id/control', requireOperator, (req, res) => {
   const m = currentMatch(req.params.id); if (!m) return res.status(404).json({error:'Tidak ditemukan'}); const action=req.body.action;
   if(m.certified)return res.status(409).json({error:'Hasil sudah disahkan dan dikunci'});
