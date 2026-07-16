@@ -60,7 +60,8 @@ function code() { return String(Math.floor(100000 + Math.random() * 900000)); }
 function publicMatch(m) {
   if (!m) return null;
   const timer = timerValue(m);
-  return { ...m, timer, serverNow: now() };
+  const judges=Object.fromEntries(Object.entries(m.judges||{}).map(([k,j])=>[k,{...j,connected:Boolean(j.connected&&now()-(j.lastSeen||0)<3500)}]));
+  return { ...m, judges, timer, serverNow: now() };
 }
 function timerValue(m) {
   if (m.status === 'berlangsung' && m.timerStartedAt) return Math.max(0, m.timerRemainingMs - (now() - m.timerStartedAt));
