@@ -1,5 +1,6 @@
 let matches=[],current=null,socket=io(),tick;
 async function init(){const me=await api('/api/me');if(me){$('#login').classList.add('hidden');$('#app').classList.remove('hidden');load()} }
+setInterval(async()=>{try{if(current){const m=await api(`/api/public/match-id/${current.id}`);current=m;renderMatch()}else if(!$('#app').classList.contains('hidden'))await load()}catch{}},700);
 $('#loginForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});location.reload()}catch(x){toast(x.message,true)}};
 $('#logout').onclick=async()=>{await api('/api/logout',{method:'POST'});location.reload()};
 async function load(){matches=await api('/api/matches');renderList()}
