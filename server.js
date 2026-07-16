@@ -144,5 +144,7 @@ io.on('connection', socket => {
 });
 
 setInterval(()=>{db.matches.filter(m=>m.status==='berlangsung').forEach(m=>{if(timerValue(m)<=0){m.timerRemainingMs=0;m.timerStartedAt=null;m.status='jeda';audit('WAKTU_HABIS',m.id);emitMatch(m);}})},250);
-server.listen(PORT,'0.0.0.0',()=>console.log(`POIN GELANGGANG aktif di http://localhost:${PORT}`));
-module.exports={app,server};
+if (!process.env.VERCEL) server.listen(PORT,'0.0.0.0',()=>console.log(`POIN GELANGGANG aktif di http://localhost:${PORT}`));
+module.exports = app;
+module.exports.app = app;
+module.exports.server = server;

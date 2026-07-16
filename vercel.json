@@ -1,0 +1,18 @@
+{
+  "services": {
+    "poin-gelanggang": {
+      "root": ".",
+      "entrypoint": "server.js",
+      "framework": "express"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "poin-gelanggang"
+      }
+    }
+  ]
+}
