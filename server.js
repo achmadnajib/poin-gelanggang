@@ -30,7 +30,8 @@ function loadDb() {
 }
 let db = loadDb();
 const cloud = Boolean(process.env.VERCEL && process.env.POSTGRES_URL);
-const pool = cloud ? new Pool({ connectionString: process.env.POSTGRES_URL, ssl: { rejectUnauthorized: false }, max: 2 }) : null;
+function postgresConnection(){if(!process.env.POSTGRES_URL)return '';const u=new URL(process.env.POSTGRES_URL);u.searchParams.delete('sslmode');return u.toString()}
+const pool = cloud ? new Pool({ connectionString: postgresConnection(), ssl: { rejectUnauthorized: false }, max: 2 }) : null;
 let cloudReady;
 async function initCloud() {
   if (!cloud) return;
@@ -85,7 +86,7 @@ app.use('/api', async (req,res,next)=>{
       res.json=async body=>{try{await client.query('update poin_gelanggang_state set data=$1::jsonb,updated_at=now() where id=1',[JSON.stringify(db)]);await client.query('commit');client.release();original(body)}catch(e){await client.query('rollback').catch(()=>{});client.release();res.status(500);original({error:'Gagal menyimpan database'})}};
     } else await cloudLoad();
     next();
-  } catch(e){res.status(503).json({error:'Database belum siap'});}
+  } catch(e){console.error('Database error:',e.message);res.status(503).json({error:'Database belum siap'});}
 });
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (_, res) => res.redirect('/operator'));
