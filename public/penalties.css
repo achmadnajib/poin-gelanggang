@@ -11,3 +11,16 @@
 .penalty-actions{display:grid;grid-template-columns:repeat(2,minmax(120px,1fr));gap:8px;margin-top:12px}
 .penalty-actions .btn{white-space:normal}
 @media(max-width:650px){.penalty-track{gap:3px}.penalty-track>b{display:none}.penalty-step{padding:5px}.penalty-actions{grid-template-columns:1fr 1fr}}
+.gesture-panel{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;margin-top:12px}
+.gesture-card{display:grid;justify-items:center;gap:4px;padding:7px 4px;border:1px solid #445168;border-radius:10px;color:#69758a;background:#101827;opacity:.42}
+.gesture-card.active{opacity:1;box-shadow:0 0 18px currentColor;border-color:currentColor}
+.gesture-card span{font-size:11px;font-weight:900;text-transform:uppercase}
+.gesture-image{width:64px;height:64px;background:currentColor;mask-position:center;mask-repeat:no-repeat;mask-size:contain;-webkit-mask-position:center;-webkit-mask-repeat:no-repeat;-webkit-mask-size:contain}
+.gesture-card.binaan .gesture-image{mask-image:url('/gestures/binaan.svg');-webkit-mask-image:url('/gestures/binaan.svg')}
+.gesture-card.teguran .gesture-image{mask-image:url('/gestures/teguran.svg');-webkit-mask-image:url('/gestures/teguran.svg')}
+.gesture-card.peringatan .gesture-image{mask-image:url('/gestures/peringatan.svg');-webkit-mask-image:url('/gestures/peringatan.svg')}
+.gesture-panel.red .gesture-card.active{color:#ff4653;background:#3a1119}
+.gesture-panel.blue .gesture-card.active{color:#36a0ff;background:#0c2e55}
+.dq-banner{margin-top:10px;padding:9px;background:#c51f31;color:#fff;border:2px solid #fff;border-radius:8px;font-size:clamp(18px,2vw,30px);font-weight:1000;letter-spacing:.08em;animation:dqPulse .8s infinite alternate}
+@keyframes dqPulse{to{background:#ff3147;box-shadow:0 0 26px #ff3147}}
+@media(min-width:1200px){.display-page .gesture-image{width:82px;height:82px}.display-page .gesture-card span{font-size:14px}}

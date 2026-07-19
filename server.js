@@ -69,7 +69,7 @@ function publicMatch(m) {
   const timer = timerValue(m);
   const judges=Object.fromEntries(Object.entries(m.judges||{}).map(([k,j])=>[k,{...j,connected:Boolean(j.connected&&now()-(j.lastSeen||0)<3500)}]));
   const status=m.status==='berlangsung'&&timer<=0?'jeda':m.status;
-  return { ...m, status, judges, timer, serverNow: now() };
+  return { ...m, status, judges, timer, serverNow: now(), displayKey: matchDisplayKey(m) };
 }
 function timerValue(m) {
   if (m.status === 'berlangsung' && m.timerStartedAt) return Math.max(0, m.timerRemainingMs - (now() - m.timerStartedAt));
@@ -78,6 +78,7 @@ function timerValue(m) {
 function emitMatch(m) { io.to(`match:${m.id}`).emit('match:update', publicMatch(m)); io.emit('matches:update', db.matches.map(publicMatch)); }
 function currentMatch(matchId) { return db.matches.find(m => m.id === matchId); }
 const authSecret=()=>process.env.SESSION_SECRET||'poin-gelanggang-lokal-ganti-ini';
+function matchDisplayKey(m){return crypto.createHmac('sha256',authSecret()).update(`display:${m.id}`).digest('base64url').slice(0,18)}
 function authToken(user){const p=Buffer.from(JSON.stringify({id:user.id,username:user.username,role:user.role,exp:now()+43200000})).toString('base64url');return `${p}.${crypto.createHmac('sha256',authSecret()).update(p).digest('base64url')}`}
 function tokenUser(req){const raw=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('pg_auth='))?.slice(8);if(!raw)return null;const [p,s]=raw.split('.');const good=crypto.createHmac('sha256',authSecret()).update(p).digest('base64url');if(s!==good)return null;try{const u=JSON.parse(Buffer.from(p,'base64url'));return u.exp>now()?u:null}catch{return null}}
 function requireOperator(req, res, next) { const u=tokenUser(req)||req.session?.user;if(u?.role==='operator'){req.operator=u;return next()}res.status(401).json({ error: 'Login operator diperlukan' }); }
@@ -146,7 +147,7 @@ app.post('/api/logout', (req, res) => {res.setHeader('Set-Cookie','pg_auth=; Pat
 app.get('/api/me', (req, res) => res.json(tokenUser(req)||req.session.user||null));
 app.get('/api/matches', requireOperator, (req, res) => res.json(db.matches.filter(m=>req.query.archived==='1'?m.archived:!m.archived).map(publicMatch)));
 app.get('/api/public/matches', (req,res)=>res.json(db.matches.filter(m=>!m.archived).map(m=>{const p=publicMatch(m);return {id:p.id,code:p.code,boutNumber:p.boutNumber,arena:p.arena,category:p.category,className:p.className,red:p.red,blue:p.blue,round:p.round,totalRounds:p.totalRounds,status:p.status,startedAt:p.startedAt,endedAt:p.endedAt,winner:p.winner,victoryReason:p.victoryReason,certified:p.certified,createdAt:p.createdAt}})));
-app.get('/api/public/match/:code', (req,res)=>{const m=db.matches.find(x=>x.code===req.params.code&&!x.archived);if(!m)return res.status(404).json({error:'Pertandingan tidak ada dalam daftar aktif'});if(m.status==='selesai')return res.status(409).json({error:'Pertandingan telah berakhir. Lihat hasil di Daftar Atlet'});res.json(publicMatch(m));});
+app.get('/api/public/match/:code', (req,res)=>{const m=db.matches.find(x=>x.code===req.params.code&&!x.archived);if(!m)return res.status(404).json({error:'Pertandingan tidak ada dalam daftar aktif'});if(m.status==='selesai'&&req.query.key!==matchDisplayKey(m))return res.status(409).json({error:'Pertandingan telah berakhir. Lihat hasil di Daftar Atlet'});res.json(publicMatch(m));});
 app.get('/api/public/match-id/:id', (req,res)=>{const m=db.matches.find(x=>x.id===req.params.id&&!x.archived);if(!m)return res.status(404).json({error:'Pertandingan tidak ada dalam daftar aktif'});res.json(publicMatch(m));});
 function validJudge(m,slot,deviceId){return Boolean(m&&!m.archived&&m.judges?.[slot]?.deviceId===deviceId)}
 app.post('/api/judge/join',(req,res)=>{const {code:roomCode,slot,name,deviceId}=req.body;const m=db.matches.find(x=>x.code===roomCode&&!x.archived);const n=Number(slot);if(!m||![1,2,3].includes(n)||!deviceId)return res.status(400).json({error:'Pertandingan tidak ada atau nomor juri tidak valid'});const old=m.judges[n];if(old?.deviceId!==deviceId&&now()-(old?.lastSeen||0)<3500)return res.status(409).json({error:`Juri ${n} sedang aktif di perangkat lain`});m.judges[n]={name:name||`Juri ${n}`,connected:true,lastSeen:now(),deviceId};audit('JURI_TERHUBUNG',m.id,{slot:n,name},`juri-${n}`);res.json(publicMatch(m));});

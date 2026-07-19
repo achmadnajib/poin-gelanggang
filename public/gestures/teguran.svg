@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+  <title>Placeholder gestur resmi Teguran IPSI 2022</title>
+  <g fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="80" cy="27" r="16"/>
+    <path d="M80 46v58M50 145l8-41h44l8 41M58 66 28 50M102 66l30-16"/>
+    <path d="M20 43l8 7-7 8M140 43l-8 7 7 8"/>
+  </g>
+  <text x="80" y="157" fill="#fff" font-size="8" text-anchor="middle" font-family="Arial">PLACEHOLDER</text>
+</svg>
