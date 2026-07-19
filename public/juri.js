@@ -1,7 +1,7 @@
 const deviceId=localStorage.pgDeviceId||(localStorage.pgDeviceId=crypto.randomUUID());
 let session=null,match=null,lock=false,tick,poll;
 const remembered=JSON.parse(localStorage.pgJudge||'null');
-if(remembered){const f=$('#joinForm');f.elements.code.value=remembered.code||'';f.elements.slot.value=remembered.slot||1;f.elements.name.value=remembered.name||'';f.elements.accessCode.value=remembered.accessCode||''}
+if(remembered){const f=$('#joinForm');f.elements.code.value=remembered.code||'';f.elements.slot.value=remembered.slot||1;f.elements.name.value=remembered.name||''}
 async function join(){if(!session)return;try{match=await api('/api/judge/join',{method:'POST',body:JSON.stringify({...session,deviceId})});$('#join').classList.add('hidden');$('#judgeApp').classList.remove('hidden');$('#judgeLabel').textContent=`JURI ${session.slot} - ${session.name}`;$('#conn').innerHTML='<span class="dot on"></span>Terhubung';render();clearInterval(tick);tick=setInterval(()=>{if(match)$('#timer').textContent=fmt(clock(match))},100);clearInterval(poll);poll=setInterval(refresh,700)}catch(x){toast(x.message,true)}}
 $('#joinForm').onsubmit=e=>{e.preventDefault();session=Object.fromEntries(new FormData(e.target));session.slot=Number(session.slot);localStorage.pgJudge=JSON.stringify(session);join()};
 $('#switchJudge').onclick=()=>{clearInterval(tick);clearInterval(poll);match=null;session=null;localStorage.removeItem('pgJudge');$('#judgeApp').classList.add('hidden');$('#join').classList.remove('hidden');toast('Silakan pilih Juri 1, 2, atau 3')};
