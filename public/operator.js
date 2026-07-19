@@ -136,14 +136,14 @@ function renderMatch(){
       ${m.status!=='selesai'?`${primaryControl(m)}
       <button class="btn" ${m.round>=m.totalRounds?'disabled':''} onclick="control('next')">Babak Berikutnya</button>
       <button class="btn ghost" onclick="addRound()">+ Tambah Babak</button>
-      <button class="btn danger" onclick="control('end')">Akhiri</button>`:'<span class="badge">PERTANDINGAN DIAKHIRI — MENUNGGU PENGESAHAN</span>'}
+      <button class="btn danger" onclick="requestEnd()">Akhiri</button>`:`<div><div class="row"><span class="badge">${m.certified?'TAHAP 3 — HASIL DISAHKAN':'TAHAP 2 — PILIH HASIL'}</span></div><br><div class="row">${resultControls(m)}</div></div>`}
     </div><button class="btn ghost" onclick="undo()">UNDO Batalkan Keputusan</button></div></div><br>
     <div class="grid grid-3">${judgeBox(1)}${judgeBox(2)}${judgeBox(3)}</div><br>
     <div class="grid grid-2">
       <div class="card"><h3 class="section-title">Kontrol Manual</h3>${sideControls('red')}${sideControls('blue')}</div>
       <div class="card"><h3 class="section-title">Nilai Real-time</h3><div class="event-list">${events.map(eventRow).join('')||'<p class="muted">Belum ada nilai masuk.</p>'}</div></div>
     </div><br>
-    <div class="card"><div class="row spread"><div><h3 class="section-title">Hasil Pertandingan</h3><span class="muted">${m.certified?'Hasil sudah disahkan dan terkunci.':'Pemenang hanya ditetapkan saat hasil disahkan.'}</span></div><div class="row">${resultControls(m)}<a class="btn ghost" href="/api/matches/${m.id}/export.pdf">PDF</a><a class="btn ghost" href="/api/matches/${m.id}/export.xlsx">Excel</a></div></div></div>`;
+    <div class="card"><div class="row spread"><div><h3 class="section-title">Dokumen Pertandingan</h3><span class="muted">${m.certified?'Hasil resmi siap dicetak.':'PDF dan Excel dapat digunakan sebagai rekap sementara.'}</span></div><div class="row"><a class="btn ghost" href="/api/matches/${m.id}/export.pdf">PDF</a><a class="btn ghost" href="/api/matches/${m.id}/export.xlsx">Excel</a></div></div></div>`;
 }
 
 function sideControls(side){
@@ -159,6 +159,19 @@ async function control(action){
     renderMatch();
     toast(action==='end'?'Pertandingan diakhiri. Silakan pilih dan sahkan hasil.':'Kontrol pertandingan diperbarui');
   }catch(error){toast(error.message,true)}
+}
+function requestEnd(){
+  if($('#endConfirm'))return;
+  const modal=document.createElement('div');
+  modal.id='endConfirm';
+  modal.className='modal';
+  modal.innerHTML=`<div class="card" style="max-width:460px"><span class="badge">TAHAP 1 — KONFIRMASI</span><h2>Akhiri pertandingan?</h2><p class="muted">Timer akan dihentikan dan Juri tidak dapat mengirim nilai lagi. Pemenang belum ditentukan sampai hasil disahkan.</p><div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="cancelEnd()">Batal</button><button class="btn danger" onclick="confirmEnd()">Akhiri Pertandingan</button></div></div>`;
+  document.body.append(modal);
+}
+function cancelEnd(){$('#endConfirm')?.remove()}
+async function confirmEnd(){
+  cancelEnd();
+  await control('end');
 }
 async function addRound(){
   const value=prompt('Masukkan durasi untuk babak tambahan (detik):',String(Math.round(current.roundDurationMs/1000)||120));
