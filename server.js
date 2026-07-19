@@ -113,7 +113,7 @@ app.post('/api/logout', (req, res) => {res.setHeader('Set-Cookie','pg_auth=; Pat
 app.get('/api/me', (req, res) => res.json(tokenUser(req)||req.session.user||null));
 app.get('/api/matches', requireOperator, (req, res) => res.json(db.matches.filter(m=>req.query.archived==='1'?m.archived:!m.archived).map(publicMatch)));
 app.get('/api/public/matches', (req,res)=>res.json(db.matches.filter(m=>!m.archived).map(m=>{const p=publicMatch(m);return {id:p.id,code:p.code,boutNumber:p.boutNumber,arena:p.arena,category:p.category,className:p.className,red:p.red,blue:p.blue,round:p.round,totalRounds:p.totalRounds,status:p.status,startedAt:p.startedAt,endedAt:p.endedAt,winner:p.winner,victoryReason:p.victoryReason,certified:p.certified,createdAt:p.createdAt}})));
-app.get('/api/public/match/:code', (req,res)=>{const m=db.matches.find(x=>x.code===req.params.code&&!x.archived);if(!m)return res.status(404).json({error:'Pertandingan tidak ada dalam daftar aktif'});res.json(publicMatch(m));});
+app.get('/api/public/match/:code', (req,res)=>{const m=db.matches.find(x=>x.code===req.params.code&&!x.archived);if(!m)return res.status(404).json({error:'Pertandingan tidak ada dalam daftar aktif'});if(m.status==='selesai')return res.status(409).json({error:'Pertandingan telah berakhir. Lihat hasil di Daftar Atlet'});res.json(publicMatch(m));});
 app.get('/api/public/match-id/:id', (req,res)=>{const m=db.matches.find(x=>x.id===req.params.id&&!x.archived);if(!m)return res.status(404).json({error:'Pertandingan tidak ada dalam daftar aktif'});res.json(publicMatch(m));});
 function validJudge(m,slot,deviceId){return Boolean(m&&!m.archived&&m.judges?.[slot]?.deviceId===deviceId)}
 app.post('/api/judge/join',(req,res)=>{const {code:roomCode,slot,name,deviceId}=req.body;const m=db.matches.find(x=>x.code===roomCode&&!x.archived);const n=Number(slot);if(!m||![1,2,3].includes(n)||!deviceId)return res.status(400).json({error:'Pertandingan tidak ada atau nomor juri tidak valid'});const old=m.judges[n];if(old?.deviceId!==deviceId&&now()-(old?.lastSeen||0)<3500)return res.status(409).json({error:`Juri ${n} sedang aktif di perangkat lain`});m.judges[n]={name:name||`Juri ${n}`,connected:true,lastSeen:now(),deviceId};audit('JURI_TERHUBUNG',m.id,{slot:n,name},`juri-${n}`);res.json(publicMatch(m));});
@@ -138,13 +138,13 @@ app.post('/api/matches', requireOperator, (req, res) => {
 });
 app.post('/api/matches/:id/duplicate', requireOperator, (req, res) => {
   const src = currentMatch(req.params.id); if (!src) return res.status(404).json({ error: 'Tidak ditemukan' });
-  const m = { ...structuredClone(src), id: id(), code: code(), status: 'menunggu', round: 1, timerRemainingMs: src.roundDurationMs, timerStartedAt: null, judges: {}, events: [], validated: [], red: {...src.red, score:0,warnings:0,penalties:0}, blue:{...src.blue,score:0,warnings:0,penalties:0}, winner:null, certified:false, createdAt:now() };
+  const m = { ...structuredClone(src), id: id(), code: code(), status: 'menunggu', round: 1, timerRemainingMs: src.roundDurationMs, timerStartedAt: null, judges: {}, events: [], validated: [], red: {...src.red, score:0,warnings:0,penalties:0}, blue:{...src.blue,score:0,warnings:0,penalties:0}, startedAt:null,endedAt:null,winner:null,loser:null,victoryReason:'',decision:null,suggestedLoser:null,certified:false,createdAt:now() };
   db.matches.unshift(m); audit('DUPLIKASI', m.id, { source: src.id }, (req.operator?.username||'operator')); emitMatch(m); res.json(publicMatch(m));
 });
 app.post('/api/matches/:id/reset', requireOperator, (req, res) => {
   const m = currentMatch(req.params.id); const u = db.users.find(x => x.id === (req.operator?.id||'operator'));
   if (!bcrypt.compareSync(req.body.password || '', u.passwordHash)) return res.status(403).json({ error: 'Password salah' });
-  Object.assign(m, {status:'menunggu',round:1,timerRemainingMs:m.roundDurationMs,timerStartedAt:null,events:[],validated:[],startedAt:null,endedAt:null,winner:null,certified:false}); Object.assign(m.red,{score:0,warnings:0,penalties:0}); Object.assign(m.blue,{score:0,warnings:0,penalties:0});
+  Object.assign(m, {status:'menunggu',round:1,timerRemainingMs:m.roundDurationMs,timerStartedAt:null,events:[],validated:[],startedAt:null,endedAt:null,winner:null,loser:null,victoryReason:'',decision:null,suggestedLoser:null,certified:false}); Object.assign(m.red,{score:0,warnings:0,penalties:0}); Object.assign(m.blue,{score:0,warnings:0,penalties:0});
   audit('RESET',m.id,{},u.username); emitMatch(m); res.json(publicMatch(m));
 });
 app.post('/api/matches/:id/archive',requireOperator,(req,res)=>{const m=currentMatch(req.params.id),u=db.users.find(x=>x.id===(req.operator?.id||'operator'));if(!m)return res.status(404).json({error:'Tidak ditemukan'});if(m.status==='berlangsung')return res.status(409).json({error:'Akhiri pertandingan sebelum menghapus'});if(!bcrypt.compareSync(req.body.password||'',u.passwordHash))return res.status(403).json({error:'Password operator salah'});m.archived=true;m.archivedAt=now();audit('ARSIPKAN_PERTANDINGAN',m.id,{code:m.code},u.username);res.json({ok:true});});
@@ -162,8 +162,18 @@ app.post('/api/matches/:id/control', requireOperator, (req, res) => {
     if(m.round>=m.totalRounds)return res.status(409).json({error:'Sudah berada di babak terakhir'});
     m.round+=1; m.timerRemainingMs=m.roundDurationMs; m.timerStartedAt=null; m.status='jeda';
   }
-  if (action==='end') { m.timerRemainingMs=timerValue(m); m.timerStartedAt=null;m.status='selesai';m.endedAt=now();m.winner=m.red.score===m.blue.score?'seri':(m.red.score>m.blue.score?'red':'blue'); }
+  if (action==='end') { m.timerRemainingMs=timerValue(m); m.timerStartedAt=null;m.status='selesai';m.endedAt=now();m.winner=null;m.victoryReason=''; }
   audit(`KONTROL_${action.toUpperCase()}`,m.id,{},(req.operator?.username||'operator')); emitMatch(m); res.json(publicMatch(m));
+});
+app.post('/api/matches/:id/add-round',requireOperator,(req,res)=>{
+  const m=currentMatch(req.params.id);if(!m)return res.status(404).json({error:'Pertandingan tidak ditemukan'});
+  if(m.certified||m.status==='selesai')return res.status(409).json({error:'Babak tidak dapat ditambah setelah pertandingan diakhiri'});
+  if(m.status==='berlangsung')return res.status(409).json({error:'Pilih Sudut Netral sebelum menambah babak'});
+  if(m.round!==m.totalRounds)return res.status(409).json({error:'Selesaikan babak yang sudah tersedia terlebih dahulu'});
+  const duration=Math.min(3600,Math.max(1,Number(req.body.duration)||0));
+  if(!Number.isFinite(Number(req.body.duration))||Number(req.body.duration)<1)return res.status(400).json({error:'Durasi babak wajib diisi minimal 1 detik'});
+  m.totalRounds+=1;m.round=m.totalRounds;m.roundDurationMs=duration*1000;m.timerRemainingMs=duration*1000;m.timerStartedAt=null;m.status='jeda';
+  audit('TAMBAH_BABAK',m.id,{round:m.round,duration},(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));
 });
 app.post('/api/matches/:id/manual', requireOperator, (req,res)=>{
   const m=currentMatch(req.params.id); const {side,type,points}=req.body; if(!m||!['red','blue'].includes(side)) return res.status(400).json({error:'Data tidak valid'});
@@ -171,7 +181,7 @@ app.post('/api/matches/:id/manual', requireOperator, (req,res)=>{
   if(type==='score') m[side].score=Math.max(0,m[side].score+Number(points));
   if(type==='warning') m[side].warnings=Math.max(0,m[side].warnings+Number(points||1));
   if(type==='penalty') {m[side].penalties=Math.max(0,m[side].penalties+1);m[side].score=Math.max(0,m[side].score-Number(points||1));}
-  if(type==='disqualify'){m.status='selesai';m.endedAt=now();m.winner=side==='red'?'blue':'red';m.victoryReason='Diskualifikasi';}
+  if(type==='disqualify'){m.status='selesai';m.endedAt=now();m.timerRemainingMs=timerValue(m);m.timerStartedAt=null;m.winner=null;m.victoryReason='';m.suggestedLoser=side;}
   addEvent(m,{source:'operator',side,type,points:Number(points||0)});audit('PERUBAHAN_MANUAL',m.id,{side,type,points},(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));
 });
 app.post('/api/matches/:id/undo', requireOperator, (req,res)=>{
@@ -182,7 +192,19 @@ app.post('/api/matches/:id/undo', requireOperator, (req,res)=>{
   if(e.validatedId){const v=m.validated.find(x=>x.id===e.validatedId&&x.status==='aktif');if(v){v.status='dibatalkan';m[v.side].score=Math.max(0,m[v.side].score-v.points);}}
   audit('BATALKAN_KEPUTUSAN',m.id,{eventId:e.id},(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));
 });
-app.post('/api/matches/:id/certify',requireOperator,(req,res)=>{const m=currentMatch(req.params.id);if(!m||m.status!=='selesai')return res.status(409).json({error:'Pertandingan harus diakhiri terlebih dahulu'});if(m.certified)return res.status(409).json({error:'Hasil sudah disahkan'});m.victoryReason=req.body.reason||'Menang angka';m.winner=req.body.winner||m.winner;m.certified=true;audit('SAHKAN_HASIL',m.id,{winner:m.winner,reason:m.victoryReason},(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));});
+app.post('/api/matches/:id/certify',requireOperator,(req,res)=>{
+  const m=currentMatch(req.params.id);if(!m||m.status!=='selesai')return res.status(409).json({error:'Pertandingan harus diakhiri terlebih dahulu'});if(m.certified)return res.status(409).json({error:'Hasil sudah disahkan'});
+  const winner=req.body.winner,reason=req.body.reason;
+  const reasons=['Menang angka','Menang teknik','Menang mutlak','Lawan mengundurkan diri','Diskualifikasi','Keputusan wasit'];
+  if(!['red','blue'].includes(winner))return res.status(400).json({error:'Pilih pemenang Sudut Merah atau Sudut Biru'});
+  if(!reasons.includes(reason))return res.status(400).json({error:'Alasan kemenangan tidak valid'});
+  const loser=winner==='red'?'blue':'red',winnerLabel=winner==='red'?'Sudut Merah':'Sudut Biru',loserLabel=loser==='red'?'Sudut Merah':'Sudut Biru';
+  let detail=reason;
+  if(reason==='Diskualifikasi')detail=`${winnerLabel} menang diskualifikasi — ${loserLabel} didiskualifikasi`;
+  if(reason==='Lawan mengundurkan diri')detail=`${winnerLabel} menang — ${loserLabel} mengundurkan diri`;
+  m.winner=winner;m.loser=loser;m.victoryReason=detail;m.decision={winner,loser,reason,detail};m.certified=true;
+  audit('SAHKAN_HASIL',m.id,m.decision,(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));
+});
 app.get('/api/matches/:id/export.xlsx', requireOperator, async(req,res)=>{const m=currentMatch(req.params.id);const wb=new ExcelJS.Workbook();const ws=wb.addWorksheet('Rekap');ws.addRows([['POIN GELANGGANG'],['Partai',m.boutNumber],['Gelanggang',m.arena],['Merah',m.red.name,m.red.team,m.red.score],['Biru',m.blue.name,m.blue.team,m.blue.score],['Pemenang',m.winner],['Alasan',m.victoryReason],[],['Waktu','Sumber','Juri','Sudut','Nilai','Status']]);m.events.forEach(e=>ws.addRow([new Date(e.at),e.source,e.judgeName||'',e.side,e.points||'',e.status]));ws.columns.forEach(c=>c.width=20);res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');res.setHeader('Content-Disposition',`attachment; filename=rekap-${m.code}.xlsx`);await wb.xlsx.write(res);res.end();});
 app.get('/api/matches/:id/export.pdf', requireOperator, (req,res)=>{const m=currentMatch(req.params.id);res.setHeader('Content-Disposition',`attachment; filename=rekap-${m.code}.pdf`);res.type('pdf');const d=new PDFDocument({margin:48});d.pipe(res);d.fontSize(22).text('POIN GELANGGANG',{align:'center'}).moveDown();d.fontSize(12).text(`Kode: ${m.code}   Partai: ${m.boutNumber}   Gelanggang: ${m.arena}`).moveDown();d.fontSize(18).fillColor('#c62828').text(`${m.red.name} — ${m.red.score}`).fillColor('#1565c0').text(`${m.blue.name} — ${m.blue.score}`).fillColor('black').moveDown().fontSize(12).text(`Pemenang: ${m.winner==='red'?m.red.name:m.winner==='blue'?m.blue.name:'Seri'}`).text(`Alasan: ${m.victoryReason||'-'}`).text(`Status pengesahan: ${m.certified?'DISAHKAN':'Belum disahkan'}`).moveDown().text('Riwayat Nilai');m.events.slice(-40).forEach(e=>d.fontSize(9).text(`${new Date(e.at).toLocaleString('id-ID')} | ${e.source}${e.judgeName?' '+e.judgeName:''} | ${e.side||'-'} ${e.points||''} | ${e.status}`));d.end();});
 

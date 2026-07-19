@@ -1,5 +1,5 @@
 let parties=[];
-const statusLabel={menunggu:'BELUM DIMULAI',berlangsung:'BERLANGSUNG',jeda:'JEDA',selesai:'SELESAI'};
+const statusLabel={menunggu:'BELUM DIMULAI',berlangsung:'BERLANGSUNG',jeda:'SUDUT NETRAL',selesai:'SELESAI'};
 
 async function loadParties(){
   try{
@@ -16,6 +16,7 @@ function athleteName(side){
 
 function resultText(m){
   if(m.status!=='selesai')return '';
+  if(!m.certified)return `<div class="match-result"><b>Skor akhir sementara: ${m.red.score} - ${m.blue.score}</b><span>Menunggu pengesahan hasil.</span></div>`;
   const winner=m.winner==='red'?m.red.name:m.winner==='blue'?m.blue.name:'Seri';
   return `<div class="match-result">Hasil: <b>${esc(m.red.name)} ${m.red.score} - ${m.blue.score} ${esc(m.blue.name)}</b><span>Pemenang: ${esc(winner)}${m.victoryReason?` (${esc(m.victoryReason)})`:''}</span></div>`;
 }
@@ -25,7 +26,7 @@ function renderParties(){
   const status=$('#status').value;
   const list=parties.filter(m=>(!status||m.status===status)&&(!query||JSON.stringify(m).toLowerCase().includes(query)));
   $('#parties').innerHTML=list.map(m=>{
-    const monitor=Boolean(m.startedAt);
+    const monitor=['berlangsung','jeda'].includes(m.status)&&Boolean(m.startedAt);
     return `<article class="party-card">
       <div class="party-meta">
         <div><span>PARTAI</span><b>${esc(m.boutNumber||'-')}</b></div>
