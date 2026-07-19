@@ -4,7 +4,7 @@ const { io } = require('socket.io-client');
 
 const base = 'http://127.0.0.1:3000';
 async function operatorSession() {
-  const login = await fetch(base + '/api/login', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username:'operator',password:'gelanggang123'}) });
+  const login = await fetch(base + '/api/login', { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username:process.env.TEST_OPERATOR_USERNAME,password:process.env.TEST_OPERATOR_PASSWORD}) });
   assert.equal(login.status, 200);
   return login.headers.get('set-cookie').split(';')[0];
 }

@@ -7,8 +7,9 @@ async function request(path, { method='GET', cookie, body }={}) {
 (async()=>{
   let x=await request('/health');assert.equal(x.r.status,200);
   x=await request('/api/matches');assert.equal(x.r.status,401);
-  x=await request('/api/login',{method:'POST',body:{username:'operator',password:'salah'}});assert.equal(x.r.status,401);
-  x=await request('/api/login',{method:'POST',body:{username:'operator',password:'gelanggang123'}});assert.equal(x.r.status,200);const cookie=x.r.headers.get('set-cookie').split(';')[0];
+  const username=process.env.TEST_OPERATOR_USERNAME, password=process.env.TEST_OPERATOR_PASSWORD;if(!username||!password)throw new Error('TEST_OPERATOR_USERNAME dan TEST_OPERATOR_PASSWORD wajib diisi');
+  x=await request('/api/login',{method:'POST',body:{username,password:'salah'}});assert.equal(x.r.status,401);
+  x=await request('/api/login',{method:'POST',body:{username,password}});assert.equal(x.r.status,200);const cookie=x.r.headers.get('set-cookie').split(';')[0];
   x=await request('/api/matches',{method:'POST',cookie,body:{boutNumber:'SMOKE-'+Date.now(),arena:'1',category:'Tanding',className:'A',redName:'Merah Audit',blueName:'Biru Audit',duration:30,validationWindow:2}});assert.equal(x.r.status,200);const m=x.data;
   x=await request(`/api/public/match/${m.code}`);assert.equal(x.data.id,m.id);
   x=await request(`/api/matches/${m.id}/certify`,{method:'POST',cookie,body:{reason:'Menang angka'}});assert.equal(x.r.status,409);

@@ -20,7 +20,7 @@ const now = () => Date.now();
 const id = () => crypto.randomUUID();
 
 const initialDb = () => ({
-  users: [{ id: 'operator', username: 'operator', passwordHash: bcrypt.hashSync('gelanggang123', 10), role: 'operator' }],
+  users: [{ id: 'operator', username: process.env.OPERATOR_USERNAME || 'operator', passwordHash: bcrypt.hashSync(process.env.OPERATOR_PASSWORD || crypto.randomBytes(24).toString('hex'), 10), role: 'operator' }],
   matches: [], audit: []
 });
 function loadDb() {
@@ -71,7 +71,7 @@ function timerValue(m) {
 function emitMatch(m) { io.to(`match:${m.id}`).emit('match:update', publicMatch(m)); io.emit('matches:update', db.matches.map(publicMatch)); }
 function currentMatch(matchId) { return db.matches.find(m => m.id === matchId); }
 const authSecret=()=>process.env.SESSION_SECRET||'poin-gelanggang-lokal-ganti-ini';
-function authToken(){const p=Buffer.from(JSON.stringify({id:'operator',username:'operator',role:'operator',exp:now()+43200000})).toString('base64url');return `${p}.${crypto.createHmac('sha256',authSecret()).update(p).digest('base64url')}`}
+function authToken(user){const p=Buffer.from(JSON.stringify({id:user.id,username:user.username,role:user.role,exp:now()+43200000})).toString('base64url');return `${p}.${crypto.createHmac('sha256',authSecret()).update(p).digest('base64url')}`}
 function tokenUser(req){const raw=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('pg_auth='))?.slice(8);if(!raw)return null;const [p,s]=raw.split('.');const good=crypto.createHmac('sha256',authSecret()).update(p).digest('base64url');if(s!==good)return null;try{const u=JSON.parse(Buffer.from(p,'base64url'));return u.exp>now()?u:null}catch{return null}}
 function requireOperator(req, res, next) { const u=tokenUser(req)||req.session?.user;if(u?.role==='operator'){req.operator=u;return next()}res.status(401).json({ error: 'Login operator diperlukan' }); }
 function addEvent(m, event) { m.events.push({ id: id(), at: now(), status: 'aktif', ...event }); save(); }
@@ -100,7 +100,7 @@ app.get('/display', (_, res) => res.sendFile(path.join(__dirname, 'public/displa
 app.post('/api/login', (req, res) => {
   const u = db.users.find(x => x.username === req.body.username && x.role === 'operator');
   if (!u || !bcrypt.compareSync(req.body.password || '', u.passwordHash)) return res.status(401).json({ error: 'Nama pengguna atau password salah' });
-  req.session.user = { id: u.id, username: u.username, role: u.role };res.setHeader('Set-Cookie',`pg_auth=${authToken()}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200`); audit('LOGIN', null, {}, u.username); res.json(req.session.user);
+  req.session.user = { id: u.id, username: u.username, role: u.role };res.setHeader('Set-Cookie',`pg_auth=${authToken(req.session.user)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200`); audit('LOGIN', null, {}, u.username); res.json(req.session.user);
 });
 app.post('/api/logout', (req, res) => {res.setHeader('Set-Cookie','pg_auth=; Path=/; Max-Age=0');req.session.destroy(() => res.json({ ok: true }))});
 app.get('/api/me', (req, res) => res.json(tokenUser(req)||req.session.user||null));
