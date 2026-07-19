@@ -1,9 +1,10 @@
-let match,tick,poll;
+let match,tick,poll,lastPenaltySignature='';
 const q=new URLSearchParams(location.search).get('code');
 if(q)$('#code').value=q;
 
 $('#displayForm').onsubmit=e=>{
   e.preventDefault();
+  enableSound();
   start($('#code').value);
   document.documentElement.requestFullscreen?.().catch(()=>{});
 };
@@ -42,7 +43,10 @@ async function start(code){
 
 function render(){
   const m=match;
+  const penaltySignature=JSON.stringify([m.red.penaltyState,m.blue.penaltyState]);
+  if(lastPenaltySignature&&lastPenaltySignature!==penaltySignature)penaltySound(Boolean(m.red.penaltyState?.disqualified||m.blue.penaltyState?.disqualified));
+  lastPenaltySignature=penaltySignature;
   const winner=m.certified?(m.winner==='red'?m.red.name:m.winner==='blue'?m.blue.name:'SERI'):'';
   const status=m.status==='jeda'?'SUDUT NETRAL':m.status.toUpperCase();
-  $('#screen').innerHTML=`<header class="display-head"><div class="display-brand">POIN <span style="color:var(--gold)">GELANGGANG</span></div><div style="text-align:center"><div class="round">BABAK ${m.round} / ${m.totalRounds}</div><div id="displayTimer" class="display-timer">${fmt(clock(m))}</div></div><div style="text-align:right"><b>GELANGGANG ${esc(m.arena)}</b><br><span class="badge ${m.status==='berlangsung'?'live':''}">${status}</span></div></header><main class="display-score"><section class="display-fighter red"><div class="name">${esc(m.red.name)}</div><div class="team">${esc(m.red.team)}</div><div class="bigscore">${m.red.score}</div><div>Teguran ${m.red.warnings} · Peringatan ${m.red.penalties}</div></section><section class="display-fighter blue"><div class="name">${esc(m.blue.name)}</div><div class="team">${esc(m.blue.team)}</div><div class="bigscore">${m.blue.score}</div><div>Teguran ${m.blue.warnings} · Peringatan ${m.blue.penalties}</div></section></main><footer class="display-foot">${winner?`PEMENANG · ${esc(winner)} · ${esc(m.victoryReason)}`:`PARTAI ${esc(m.boutNumber)} · ${esc(m.category)} · ${esc(m.className)}`}</footer>`;
+  $('#screen').innerHTML=`<header class="display-head"><div class="display-brand">POIN <span style="color:var(--gold)">GELANGGANG</span></div><div style="text-align:center"><div class="round">BABAK ${m.round} / ${m.totalRounds}</div><div id="displayTimer" class="display-timer">${fmt(clock(m))}</div></div><div style="text-align:right"><b>GELANGGANG ${esc(m.arena)}</b><br><span class="badge ${m.status==='berlangsung'?'live':''}">${status}</span></div></header><main class="display-score"><section class="display-fighter red"><div class="name">${esc(m.red.name)}</div><div class="team">${esc(m.red.team)}</div><div class="bigscore">${m.red.score}</div>${penaltyTrack(m.red.penaltyState)}</section><section class="display-fighter blue"><div class="name">${esc(m.blue.name)}</div><div class="team">${esc(m.blue.team)}</div><div class="bigscore">${m.blue.score}</div>${penaltyTrack(m.blue.penaltyState)}</section></main><footer class="display-foot">${winner?`PEMENANG · ${esc(winner)} · ${esc(m.victoryReason)}`:`PARTAI ${esc(m.boutNumber)} · ${esc(m.category)} · ${esc(m.className)}`}</footer>`;
 }

@@ -128,14 +128,15 @@ function renderMatch(){
       <div class="row"><span class="badge">KODE <b style="font-size:18px;margin-left:5px">${m.code}</b></span><a class="btn ghost" href="/display?code=${m.code}" target="_blank">Layar Besar</a></div>
     </div><br>
     <div class="grid scoreboard">
-      <div class="fighter red"><div class="muted">SUDUT MERAH</div><div class="fighter-name">${esc(m.red.name)}</div><div class="muted">${esc(m.red.team)}</div><div class="score">${m.red.score}</div><div>Teguran ${m.red.warnings} - Peringatan ${m.red.penalties}</div></div>
+      <div class="fighter red"><div class="muted">SUDUT MERAH</div><div class="fighter-name">${esc(m.red.name)}</div><div class="muted">${esc(m.red.team)}</div><div class="score">${m.red.score}</div>${penaltyTrack(m.red.penaltyState)}</div>
       <div class="card timer"><div class="round">BABAK ${m.round} / ${m.totalRounds}</div><div id="timer" class="timer-value">${fmt(clock(m))}</div><span class="badge ${m.status==='berlangsung'?'live':''}">${statusText(m.status).toUpperCase()}</span></div>
-      <div class="fighter blue"><div class="muted">SUDUT BIRU</div><div class="fighter-name">${esc(m.blue.name)}</div><div class="muted">${esc(m.blue.team)}</div><div class="score">${m.blue.score}</div><div>Teguran ${m.blue.warnings} - Peringatan ${m.blue.penalties}</div></div>
+      <div class="fighter blue"><div class="muted">SUDUT BIRU</div><div class="fighter-name">${esc(m.blue.name)}</div><div class="muted">${esc(m.blue.team)}</div><div class="score">${m.blue.score}</div>${penaltyTrack(m.blue.penaltyState)}</div>
     </div><br>
     <div class="card"><div class="row spread"><div class="row">
       ${m.status!=='selesai'?`${primaryControl(m)}
       <button class="btn" ${m.round>=m.totalRounds?'disabled':''} onclick="control('next')">Babak Berikutnya</button>
       <button class="btn ghost" onclick="addRound()">+ Tambah Babak</button>
+      <button class="btn ghost" onclick="resetRoundPenalties()">Reset Babak</button>
       <button class="btn danger" onclick="requestEnd()">Akhiri</button>`:`<div><div class="row"><span class="badge">${m.certified?'TAHAP 3 — HASIL DISAHKAN':'TAHAP 2 — PILIH HASIL'}</span></div><br><div class="row">${resultControls(m)}</div></div>`}
     </div><button class="btn ghost" onclick="undo()">UNDO Batalkan Keputusan</button></div></div><br>
     <div class="grid grid-3">${judgeBox(1)}${judgeBox(2)}${judgeBox(3)}</div><br>
@@ -147,10 +148,11 @@ function renderMatch(){
 }
 
 function sideControls(side){
-  return `<div class="row" style="padding:10px 0;border-bottom:1px solid var(--line)"><b style="width:60px;color:var(--${side})">${side==='red'?'Merah':'Biru'}</b><button class="btn" onclick="manual('${side}','score',1)">+1</button><button class="btn" onclick="manual('${side}','score',-1)">-1</button><button class="btn" onclick="manual('${side}','warning',1)">Teguran</button><button class="btn" onclick="manual('${side}','penalty',1)">Peringatan -1</button></div>`;
+  const fighter=current[side];
+  return `<div class="penalty-panel"><div class="row spread"><b style="color:var(--${side})">SUDUT ${side==='red'?'MERAH':'BIRU'} — ${esc(fighter.name)}</b><button class="btn ghost" onclick="undoPenalty('${side}')">Undo Hukuman</button></div>${penaltyTrack(fighter.penaltyState)}<div class="penalty-actions"><button class="btn" onclick="applyPenalty('${side}','light')">Pelanggaran Ringan</button><button class="btn" onclick="applyPenalty('${side}','medium')">Pelanggaran Sedang</button><button class="btn danger" onclick="chooseHeavy('${side}')">Pelanggaran Berat</button><button class="btn danger" onclick="applyPenalty('${side}','disqualify')">Diskualifikasi</button></div><div class="row" style="margin-top:10px"><button class="btn ghost" onclick="manual('${side}','score',1)">Nilai +1</button><button class="btn ghost" onclick="manual('${side}','score',-1)">Nilai -1</button></div></div>`;
 }
 function eventRow(e){
-  return `<div class="event ${e.status==='dibatalkan'?'cancelled':''}"><span>${new Date(e.at).toLocaleTimeString('id-ID',{hour12:false})}</span><span>${e.source==='judge'?`Juri ${e.judge}`:'Operator'} - ${e.side==='red'?'Merah':'Biru'} ${e.type||''}</span><b>${e.points>0?'+':''}${e.points||''}${e.validatedId?' OK':''}</b></div>`;
+  return `<div class="event ${e.status==='dibatalkan'?'cancelled':''}"><span>${new Date(e.at).toLocaleTimeString('id-ID',{hour12:false})}</span><span>${e.source==='judge'?`Juri ${e.judge}`:'Operator'} - ${e.side==='red'?'Merah':'Biru'} ${esc(e.penaltyLabel||e.type||'')}</span><b>${e.points>0?'+':''}${e.points||''}${e.validatedId?' OK':''}</b></div>`;
 }
 
 async function control(action){
@@ -182,6 +184,41 @@ async function addRound(){
     current=await api(`/api/matches/${current.id}/add-round`,{method:'POST',body:JSON.stringify({duration})});
     renderMatch();
     toast(`Babak ${current.round} ditambahkan dengan waktu ${duration} detik`);
+  }catch(error){toast(error.message,true)}
+}
+function chooseHeavy(side){
+  const modal=document.createElement('div');
+  modal.id='heavyChoice';
+  modal.className='modal';
+  modal.innerHTML=`<div class="card" style="max-width:470px"><h2>Pelanggaran Berat</h2><p class="muted">Apakah lawan mengalami cedera akibat pelanggaran?</p><div class="grid grid-2"><button class="btn" onclick="closeHeavy();applyPenalty('${side}','heavy','none')">Tanpa Cedera</button><button class="btn danger" onclick="closeHeavy();applyPenalty('${side}','heavy','injury')">Dengan Cedera</button></div><br><button class="btn ghost" style="width:100%" onclick="closeHeavy()">Batal</button></div>`;
+  document.body.append(modal);
+}
+function closeHeavy(){$('#heavyChoice')?.remove()}
+function penaltyWillDisqualify(side,type){
+  const state=current[side].penaltyState||{};
+  return type==='disqualify'||Number(state.peringatan)>=2;
+}
+async function applyPenalty(side,type,injury){
+  const fighter=current[side],willDisqualify=penaltyWillDisqualify(side,type);
+  if(willDisqualify&&!confirm(`Hukuman berikutnya akan mendiskualifikasi ${fighter.name}. Lanjutkan?`))return;
+  try{
+    current=await api(`/api/matches/${current.id}/penalty`,{method:'POST',body:JSON.stringify({side,type,injury,confirmDisqualification:willDisqualify})});
+    renderMatch();penaltySound(willDisqualify);
+    const state=current[side].penaltyState;
+    toast(state.disqualified?`${fighter.name} didiskualifikasi`:'Status hukuman diperbarui');
+  }catch(error){toast(error.message,true)}
+}
+async function undoPenalty(side){
+  try{
+    current=await api(`/api/matches/${current.id}/penalty-undo`,{method:'POST',body:JSON.stringify({side})});
+    renderMatch();penaltySound();toast('Hukuman terakhir dibatalkan');
+  }catch(error){toast(error.message,true)}
+}
+async function resetRoundPenalties(){
+  if(!confirm('Reset Binaan dan Teguran untuk babak ini? Peringatan tetap berlaku.'))return;
+  try{
+    current=await api(`/api/matches/${current.id}/reset-round-penalties`,{method:'POST'});
+    renderMatch();toast('Binaan dan Teguran babak telah direset');
   }catch(error){toast(error.message,true)}
 }
 async function manual(side,type,points){

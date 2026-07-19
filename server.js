@@ -65,6 +65,7 @@ function code() {
 }
 function publicMatch(m) {
   if (!m) return null;
+  ensurePenaltyState(m);
   const timer = timerValue(m);
   const judges=Object.fromEntries(Object.entries(m.judges||{}).map(([k,j])=>[k,{...j,connected:Boolean(j.connected&&now()-(j.lastSeen||0)<3500)}]));
   const status=m.status==='berlangsung'&&timer<=0?'jeda':m.status;
@@ -81,6 +82,38 @@ function authToken(user){const p=Buffer.from(JSON.stringify({id:user.id,username
 function tokenUser(req){const raw=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('pg_auth='))?.slice(8);if(!raw)return null;const [p,s]=raw.split('.');const good=crypto.createHmac('sha256',authSecret()).update(p).digest('base64url');if(s!==good)return null;try{const u=JSON.parse(Buffer.from(p,'base64url'));return u.exp>now()?u:null}catch{return null}}
 function requireOperator(req, res, next) { const u=tokenUser(req)||req.session?.user;if(u?.role==='operator'){req.operator=u;return next()}res.status(401).json({ error: 'Login operator diperlukan' }); }
 function addEvent(m, event) { m.events.push({ id: id(), at: now(), status: 'aktif', ...event }); save(); }
+function ensurePenaltyState(m){
+  for(const side of ['red','blue']){
+    const fighter=m[side];
+    if(!fighter.penaltyState)fighter.penaltyState={
+      binaan:0,
+      teguran:Math.min(2,Math.max(0,Number(fighter.warnings)||0)),
+      peringatan:Math.min(2,Math.max(0,Number(fighter.penalties)||0)),
+      disqualified:false
+    };
+    fighter.warnings=fighter.penaltyState.teguran;
+    fighter.penalties=fighter.penaltyState.peringatan;
+  }
+}
+function penaltySnapshot(m,side){ensurePenaltyState(m);return structuredClone(m[side].penaltyState)}
+function penaltyLabel(state){
+  if(state.disqualified)return 'Diskualifikasi';
+  if(state.peringatan)return `Peringatan ${state.peringatan===1?'I':'II'}`;
+  if(state.teguran)return `Teguran ${state.teguran===1?'I':'II'}`;
+  if(state.binaan)return `Binaan ${state.binaan===1?'I':'II'}`;
+  return 'Belum ada hukuman';
+}
+function resetRoundPenalties(m,actor='sistem'){
+  ensurePenaltyState(m);
+  for(const side of ['red','blue']){
+    const state=m[side].penaltyState;
+    if(!state.binaan&&!state.teguran)continue;
+    const before=structuredClone(state);
+    state.binaan=0;state.teguran=0;m[side].warnings=0;
+    addEvent(m,{source:'operator',side,type:'penalty_reset',penaltyLabel:'Reset hukuman babak',before,after:structuredClone(state),points:0});
+  }
+  audit('RESET_HUKUMAN_BABAK',m.id,{round:m.round},actor);
+}
 
 app.use(express.json({ limit: '1mb' }));
 app.use(session({ secret: process.env.SESSION_SECRET || 'poin-gelanggang-lokal-ganti-ini', resave: false, saveUninitialized: false, cookie: { maxAge: 12 * 60 * 60 * 1000, sameSite: 'lax' } }));
@@ -138,13 +171,14 @@ app.post('/api/matches', requireOperator, (req, res) => {
 });
 app.post('/api/matches/:id/duplicate', requireOperator, (req, res) => {
   const src = currentMatch(req.params.id); if (!src) return res.status(404).json({ error: 'Tidak ditemukan' });
-  const m = { ...structuredClone(src), id: id(), code: code(), status: 'menunggu', round: 1, timerRemainingMs: src.roundDurationMs, timerStartedAt: null, judges: {}, events: [], validated: [], red: {...src.red, score:0,warnings:0,penalties:0}, blue:{...src.blue,score:0,warnings:0,penalties:0}, startedAt:null,endedAt:null,winner:null,loser:null,victoryReason:'',decision:null,suggestedLoser:null,certified:false,createdAt:now() };
+  const emptyPenalty={binaan:0,teguran:0,peringatan:0,disqualified:false};
+  const m = { ...structuredClone(src), id: id(), code: code(), status: 'menunggu', round: 1, timerRemainingMs: src.roundDurationMs, timerStartedAt: null, judges: {}, events: [], validated: [], red: {...src.red, score:0,warnings:0,penalties:0,penaltyState:structuredClone(emptyPenalty)}, blue:{...src.blue,score:0,warnings:0,penalties:0,penaltyState:structuredClone(emptyPenalty)}, startedAt:null,endedAt:null,winner:null,loser:null,victoryReason:'',decision:null,suggestedLoser:null,certified:false,createdAt:now() };
   db.matches.unshift(m); audit('DUPLIKASI', m.id, { source: src.id }, (req.operator?.username||'operator')); emitMatch(m); res.json(publicMatch(m));
 });
 app.post('/api/matches/:id/reset', requireOperator, (req, res) => {
   const m = currentMatch(req.params.id); const u = db.users.find(x => x.id === (req.operator?.id||'operator'));
   if (!bcrypt.compareSync(req.body.password || '', u.passwordHash)) return res.status(403).json({ error: 'Password salah' });
-  Object.assign(m, {status:'menunggu',round:1,timerRemainingMs:m.roundDurationMs,timerStartedAt:null,events:[],validated:[],startedAt:null,endedAt:null,winner:null,loser:null,victoryReason:'',decision:null,suggestedLoser:null,certified:false}); Object.assign(m.red,{score:0,warnings:0,penalties:0}); Object.assign(m.blue,{score:0,warnings:0,penalties:0});
+  Object.assign(m, {status:'menunggu',round:1,timerRemainingMs:m.roundDurationMs,timerStartedAt:null,events:[],validated:[],startedAt:null,endedAt:null,winner:null,loser:null,victoryReason:'',decision:null,suggestedLoser:null,certified:false}); Object.assign(m.red,{score:0,warnings:0,penalties:0,penaltyState:{binaan:0,teguran:0,peringatan:0,disqualified:false}}); Object.assign(m.blue,{score:0,warnings:0,penalties:0,penaltyState:{binaan:0,teguran:0,peringatan:0,disqualified:false}});
   audit('RESET',m.id,{},u.username); emitMatch(m); res.json(publicMatch(m));
 });
 app.post('/api/matches/:id/archive',requireOperator,(req,res)=>{const m=currentMatch(req.params.id),u=db.users.find(x=>x.id===(req.operator?.id||'operator'));if(!m)return res.status(404).json({error:'Tidak ditemukan'});if(m.status==='berlangsung')return res.status(409).json({error:'Akhiri pertandingan sebelum menghapus'});if(!bcrypt.compareSync(req.body.password||'',u.passwordHash))return res.status(403).json({error:'Password operator salah'});m.archived=true;m.archivedAt=now();audit('ARSIPKAN_PERTANDINGAN',m.id,{code:m.code},u.username);res.json({ok:true});});
@@ -160,7 +194,7 @@ app.post('/api/matches/:id/control', requireOperator, (req, res) => {
   if (action==='pause') { m.timerRemainingMs=timerValue(m); m.timerStartedAt=null; m.status='jeda'; }
   if (action==='next') {
     if(m.round>=m.totalRounds)return res.status(409).json({error:'Sudah berada di babak terakhir'});
-    m.round+=1; m.timerRemainingMs=m.roundDurationMs; m.timerStartedAt=null; m.status='jeda';
+    resetRoundPenalties(m,(req.operator?.username||'operator'));m.round+=1; m.timerRemainingMs=m.roundDurationMs; m.timerStartedAt=null; m.status='jeda';
   }
   if (action==='end') { m.timerRemainingMs=timerValue(m); m.timerStartedAt=null;m.status='selesai';m.endedAt=now();m.winner=null;m.victoryReason=''; }
   audit(`KONTROL_${action.toUpperCase()}`,m.id,{},(req.operator?.username||'operator')); emitMatch(m); res.json(publicMatch(m));
@@ -172,7 +206,7 @@ app.post('/api/matches/:id/add-round',requireOperator,(req,res)=>{
   if(m.round!==m.totalRounds)return res.status(409).json({error:'Selesaikan babak yang sudah tersedia terlebih dahulu'});
   const duration=Math.min(3600,Math.max(1,Number(req.body.duration)||0));
   if(!Number.isFinite(Number(req.body.duration))||Number(req.body.duration)<1)return res.status(400).json({error:'Durasi babak wajib diisi minimal 1 detik'});
-  m.totalRounds+=1;m.round=m.totalRounds;m.roundDurationMs=duration*1000;m.timerRemainingMs=duration*1000;m.timerStartedAt=null;m.status='jeda';
+  resetRoundPenalties(m,(req.operator?.username||'operator'));m.totalRounds+=1;m.round=m.totalRounds;m.roundDurationMs=duration*1000;m.timerRemainingMs=duration*1000;m.timerStartedAt=null;m.status='jeda';
   audit('TAMBAH_BABAK',m.id,{round:m.round,duration},(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));
 });
 app.post('/api/matches/:id/manual', requireOperator, (req,res)=>{
@@ -183,6 +217,48 @@ app.post('/api/matches/:id/manual', requireOperator, (req,res)=>{
   if(type==='penalty') {m[side].penalties=Math.max(0,m[side].penalties+1);m[side].score=Math.max(0,m[side].score-Number(points||1));}
   if(type==='disqualify'){m.status='selesai';m.endedAt=now();m.timerRemainingMs=timerValue(m);m.timerStartedAt=null;m.winner=null;m.victoryReason='';m.suggestedLoser=side;}
   addEvent(m,{source:'operator',side,type,points:Number(points||0)});audit('PERUBAHAN_MANUAL',m.id,{side,type,points},(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));
+});
+app.post('/api/matches/:id/penalty',requireOperator,(req,res)=>{
+  const m=currentMatch(req.params.id),side=req.body.side,type=req.body.type,injury=req.body.injury;
+  if(!m||!['red','blue'].includes(side))return res.status(400).json({error:'Pesilat tidak valid'});
+  if(m.certified||m.status==='selesai')return res.status(409).json({error:'Hukuman tidak dapat diubah setelah pertandingan diakhiri'});
+  if(!['light','medium','heavy','disqualify'].includes(type))return res.status(400).json({error:'Jenis pelanggaran tidak valid'});
+  if(type==='heavy'&&!['none','injury'].includes(injury))return res.status(400).json({error:'Pilih pelanggaran berat tanpa cedera atau dengan cedera'});
+  ensurePenaltyState(m);const state=m[side].penaltyState;
+  if(state.disqualified)return res.status(409).json({error:'Pesilat sudah didiskualifikasi'});
+  const before=structuredClone(state);let deduction=0;
+  const warning=()=>{if(state.peringatan===0){state.peringatan=1;deduction=5}else if(state.peringatan===1){state.peringatan=2;deduction=10}else state.disqualified=true};
+  const reprimand=()=>{if(state.teguran===0){state.teguran=1;deduction=1}else if(state.teguran===1){state.teguran=2;deduction=2}else warning()};
+  if(type==='light'){
+    if(state.peringatan>0)warning();
+    else if(state.teguran>=2)warning();
+    else if(state.binaan<2)state.binaan+=1;
+    else reprimand();
+  }
+  if(type==='medium'||(type==='heavy'&&injury==='none')){
+    if(state.peringatan>0)warning();else reprimand();
+  }
+  if(type==='heavy'&&injury==='injury')warning();
+  if(type==='disqualify')state.disqualified=true;
+  if(state.disqualified&&!req.body.confirmDisqualification){m[side].penaltyState=before;return res.status(409).json({error:'Konfirmasi diskualifikasi diperlukan'})}
+  m[side].score-=deduction;m[side].warnings=state.teguran;m[side].penalties=state.peringatan;
+  const after=structuredClone(state),label=penaltyLabel(state);
+  addEvent(m,{source:'operator',side,type:'penalty_state',violationType:type,injury:injury||null,penaltyLabel:label,before,after,points:-deduction});
+  if(state.disqualified){m.timerRemainingMs=timerValue(m);m.timerStartedAt=null;m.status='selesai';m.endedAt=now();m.winner=null;m.victoryReason='';m.suggestedLoser=side}
+  audit('HUKUMAN_OTOMATIS',m.id,{side,type,injury,before,after,deduction},(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));
+});
+app.post('/api/matches/:id/penalty-undo',requireOperator,(req,res)=>{
+  const m=currentMatch(req.params.id),side=req.body.side;if(!m||!['red','blue'].includes(side))return res.status(400).json({error:'Pesilat tidak valid'});
+  if(m.certified)return res.status(409).json({error:'Hasil sudah disahkan dan dikunci'});
+  const e=[...m.events].reverse().find(x=>x.side===side&&x.type==='penalty_state'&&x.status==='aktif');
+  if(!e)return res.status(400).json({error:'Belum ada hukuman yang dapat dibatalkan'});
+  ensurePenaltyState(m);m[side].penaltyState=structuredClone(e.before);m[side].warnings=e.before.teguran;m[side].penalties=e.before.peringatan;m[side].score-=Number(e.points||0);e.status='dibatalkan';
+  if(e.after?.disqualified){m.status='jeda';m.endedAt=null;m.winner=null;m.loser=null;m.victoryReason='';m.decision=null;m.suggestedLoser=null}
+  audit('UNDO_HUKUMAN',m.id,{side,eventId:e.id},(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));
+});
+app.post('/api/matches/:id/reset-round-penalties',requireOperator,(req,res)=>{
+  const m=currentMatch(req.params.id);if(!m)return res.status(404).json({error:'Pertandingan tidak ditemukan'});if(m.certified||m.status==='selesai')return res.status(409).json({error:'Hukuman tidak dapat direset saat ini'});
+  resetRoundPenalties(m,(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));
 });
 app.post('/api/matches/:id/undo', requireOperator, (req,res)=>{
   const m=currentMatch(req.params.id);if(!m)return res.status(404).json({error:'Tidak ditemukan'});if(m.certified)return res.status(409).json({error:'Hasil sudah disahkan dan dikunci'}); const e=[...m.events].reverse().find(x=>x.status==='aktif'); if(!e)return res.status(400).json({error:'Tidak ada keputusan'});e.status='dibatalkan';
