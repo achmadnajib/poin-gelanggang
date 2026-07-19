@@ -56,7 +56,13 @@ function save() {
 function audit(action, matchId, detail = {}, actor = 'sistem') {
   db.audit.push({ id: id(), action, matchId, detail, actor, at: now() }); save();
 }
-function code() { return String(Math.floor(100000 + Math.random() * 900000)); }
+function code() {
+  for (let i=0;i<10000;i++) {
+    const candidate=String(crypto.randomInt(1000,10000));
+    if (!db.matches.some(m=>m.code===candidate&&!m.archived)) return candidate;
+  }
+  throw new Error('Semua kode pertandingan sedang digunakan');
+}
 function publicMatch(m) {
   if (!m) return null;
   const timer = timerValue(m);
@@ -113,13 +119,17 @@ app.post('/api/judge/heartbeat',(req,res)=>{const m=currentMatch(req.body.matchI
 app.post('/api/judge/score',(req,res)=>{const m=currentMatch(req.body.matchId),slot=Number(req.body.slot),side=req.body.side;const points=Number(req.body.points);if(!validJudge(m,slot,req.body.deviceId))return res.status(403).json({error:'Sesi juri tidak sah'});if(!m||m.certified||m.status!=='berlangsung'||timerValue(m)<=0||!['red','blue'].includes(side)||!m.enabledScores.includes(points))return res.status(400).json({error:'Nilai tidak dapat dikirim saat ini'});const e={id:id(),at:now(),clientAt:Number(req.body.clientAt||now()),source:'judge',judge:slot,judgeName:m.judges[slot]?.name||`Juri ${slot}`,side,points,status:'aktif'};m.events.push(e);const candidates=m.events.filter(x=>x.source==='judge'&&x.status==='aktif'&&!x.validatedId&&x.side===side&&x.points===points&&Math.abs(x.at-e.at)<=m.validationWindowMs);const unique=[...new Map(candidates.map(x=>[x.judge,x])).values()];if(unique.length>=2){const group=unique.slice(0,3),v={id:id(),side,points,at:now(),judgeEvents:group.map(x=>x.id),status:'aktif'};m.validated.push(v);group.forEach(x=>x.validatedId=v.id);m[side].score+=points;}res.json({match:publicMatch(m),event:e});});
 app.post('/api/judge/undo',(req,res)=>{const m=currentMatch(req.body.matchId),slot=Number(req.body.slot);if(!validJudge(m,slot,req.body.deviceId))return res.status(403).json({error:'Sesi juri tidak sah'});if(m.certified)return res.status(409).json({error:'Hasil sudah disahkan'});const e=[...(m?.events||[])].reverse().find(x=>x.judge===slot&&x.status==='aktif');if(!e)return res.status(400).json({error:'Tidak ada nilai'});e.status='dibatalkan';if(e.validatedId){const v=m.validated.find(x=>x.id===e.validatedId&&x.status==='aktif');if(v){v.status='dibatalkan';m[v.side].score=Math.max(0,m[v.side].score-v.points)}}audit('JURI_UNDO',m.id,{slot,eventId:e.id},`juri-${slot}`);res.json(publicMatch(m));});
 app.post('/api/matches', requireOperator, (req, res) => {
-  const b = req.body; const m = {
+  const b = req.body;
+  const duration=Math.min(3600,Math.max(1,Number(b.duration)||120));
+  const totalRounds=Math.min(20,Math.max(1,Number(b.totalRounds)||3));
+  const validationWindow=Math.min(3,Math.max(1,Number(b.validationWindow)||2));
+  const m = {
     id: id(), code: code(), boutNumber: b.boutNumber || '', arena: b.arena || '1', category: b.category || 'Tanding', className: b.className || '',
     red: { name: b.redName || 'Pesilat Merah', team: b.redTeam || '', score: 0, warnings: 0, penalties: 0 },
     blue: { name: b.blueName || 'Pesilat Biru', team: b.blueTeam || '', score: 0, warnings: 0, penalties: 0 },
-    round: 1, totalRounds: Number(b.totalRounds || 3), roundDurationMs: Number(b.duration || 120) * 1000,
-    timerRemainingMs: Number(b.duration || 120) * 1000, timerStartedAt: null, status: 'menunggu',
-    validationWindowMs: Number(b.validationWindow || 2) * 1000, enabledScores: b.enabledScores || [1,2,3],
+    round: 1, totalRounds, roundDurationMs: duration * 1000,
+    timerRemainingMs: duration * 1000, timerStartedAt: null, status: 'menunggu',
+    validationWindowMs: validationWindow * 1000, enabledScores: b.enabledScores || [1,2,3],
     judges: {}, events: [], validated: [], startedAt: null, endedAt: null, winner: null, victoryReason: '', certified: false, createdAt: now()
   };
   db.matches.unshift(m); audit('BUAT_PERTANDINGAN', m.id, { code: m.code }, (req.operator?.username||'operator')); emitMatch(m); res.json(publicMatch(m));
@@ -140,9 +150,16 @@ app.post('/api/matches/archive-finished',requireOperator,(req,res)=>{const u=db.
 app.post('/api/matches/:id/control', requireOperator, (req, res) => {
   const m = currentMatch(req.params.id); if (!m) return res.status(404).json({error:'Tidak ditemukan'}); const action=req.body.action;
   if(m.certified)return res.status(409).json({error:'Hasil sudah disahkan dan dikunci'});
-  if (action==='start'||action==='resume') { if (!m.startedAt) m.startedAt=now(); m.status='berlangsung'; m.timerStartedAt=now(); }
+  if (!['start','resume','pause','next','end'].includes(action)) return res.status(400).json({error:'Kontrol tidak valid'});
+  if (action==='start'||action==='resume') {
+    if(timerValue(m)<=0)return res.status(409).json({error:m.round<m.totalRounds?'Waktu habis. Tekan Babak Berikutnya.':'Waktu babak terakhir habis. Akhiri pertandingan.'});
+    if (!m.startedAt) m.startedAt=now(); m.status='berlangsung'; m.timerStartedAt=now();
+  }
   if (action==='pause') { m.timerRemainingMs=timerValue(m); m.timerStartedAt=null; m.status='jeda'; }
-  if (action==='next') { m.round=Math.min(m.totalRounds,m.round+1); m.timerRemainingMs=m.roundDurationMs; m.timerStartedAt=null; m.status='jeda'; }
+  if (action==='next') {
+    if(m.round>=m.totalRounds)return res.status(409).json({error:'Sudah berada di babak terakhir'});
+    m.round+=1; m.timerRemainingMs=m.roundDurationMs; m.timerStartedAt=null; m.status='jeda';
+  }
   if (action==='end') { m.timerRemainingMs=timerValue(m); m.timerStartedAt=null;m.status='selesai';m.endedAt=now();m.winner=m.red.score===m.blue.score?'seri':(m.red.score>m.blue.score?'red':'blue'); }
   audit(`KONTROL_${action.toUpperCase()}`,m.id,{},(req.operator?.username||'operator')); emitMatch(m); res.json(publicMatch(m));
 });
@@ -157,7 +174,9 @@ app.post('/api/matches/:id/manual', requireOperator, (req,res)=>{
 });
 app.post('/api/matches/:id/undo', requireOperator, (req,res)=>{
   const m=currentMatch(req.params.id);if(!m)return res.status(404).json({error:'Tidak ditemukan'});if(m.certified)return res.status(409).json({error:'Hasil sudah disahkan dan dikunci'}); const e=[...m.events].reverse().find(x=>x.status==='aktif'); if(!e)return res.status(400).json({error:'Tidak ada keputusan'});e.status='dibatalkan';
-  if(e.type==='score'&&e.source==='operator')m[e.side].score=Math.max(0,m[e.side].score-e.points);
+  if(e.source==='operator'&&e.type==='score')m[e.side].score=Math.max(0,m[e.side].score-e.points);
+  if(e.source==='operator'&&e.type==='warning')m[e.side].warnings=Math.max(0,m[e.side].warnings-Number(e.points||1));
+  if(e.source==='operator'&&e.type==='penalty'){m[e.side].penalties=Math.max(0,m[e.side].penalties-1);m[e.side].score+=Number(e.points||1);}
   if(e.validatedId){const v=m.validated.find(x=>x.id===e.validatedId&&x.status==='aktif');if(v){v.status='dibatalkan';m[v.side].score=Math.max(0,m[v.side].score-v.points);}}
   audit('BATALKAN_KEPUTUSAN',m.id,{eventId:e.id},(req.operator?.username||'operator'));emitMatch(m);res.json(publicMatch(m));
 });
