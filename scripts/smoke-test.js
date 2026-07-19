@@ -37,7 +37,7 @@ async function request(path, { method='GET', cookie, body }={}) {
   x=await request(`/api/matches/${m.id}/add-round`,{method:'POST',cookie,body:{duration:45}});assert.equal(x.data.round,4);assert.equal(x.data.totalRounds,4);assert.equal(x.data.timer,45000);
   x=await request(`/api/matches/${m.id}/control`,{method:'POST',cookie,body:{action:'end'}});assert.equal(x.data.status,'selesai');
   assert.equal(x.data.winner,null);
-  x=await request(`/api/public/match/${m.code}`);assert.equal(x.r.status,409);
+  x=await request(`/api/public/match/${m.code}`);assert.equal(x.r.status,200);assert.equal(x.data.status,'selesai');
   x=await request(`/api/public/match/${m.code}?key=${m.displayKey}`);assert.equal(x.r.status,200);
   x=await request(`/api/matches/${m.id}/certify`,{method:'POST',cookie,body:{reason:'Diskualifikasi',winner:'blue'}});assert.equal(x.data.certified,true);assert.equal(x.data.winner,'blue');assert.equal(x.data.loser,'red');assert.match(x.data.victoryReason,/Sudut Merah didiskualifikasi/);
   x=await request(`/api/matches/${m.id}/manual`,{method:'POST',cookie,body:{side:'red',type:'score',points:1}});assert.equal(x.r.status,409);
