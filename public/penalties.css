@@ -24,3 +24,28 @@
 .dq-banner{margin-top:10px;padding:9px;background:#c51f31;color:#fff;border:2px solid #fff;border-radius:8px;font-size:clamp(18px,2vw,30px);font-weight:1000;letter-spacing:.08em;animation:dqPulse .8s infinite alternate}
 @keyframes dqPulse{to{background:#ff3147;box-shadow:0 0 26px #ff3147}}
 @media(min-width:1200px){.display-page .gesture-image{width:82px;height:82px}.display-page .gesture-card span{font-size:14px}}
+.display-page{overflow:hidden}
+.display-page .display-wrap{height:100vh;min-height:0;padding:12px 16px;grid-template-rows:88px minmax(0,1fr) 30px;gap:10px}
+.display-page .display-head{min-height:0}
+.display-page .display-brand{font-size:clamp(18px,1.8vw,34px)}
+.display-page .display-timer{font-size:clamp(54px,5.5vw,104px);line-height:.82}
+.display-page .display-score{min-height:0;gap:clamp(10px,2vw,28px)}
+.display-page .display-fighter{min-height:0;overflow:hidden;padding:clamp(12px,1.4vw,26px);grid-template-rows:auto auto minmax(0,1fr) auto;align-content:stretch}
+.display-page .display-fighter .name{font-size:clamp(28px,3.4vw,66px);line-height:1.05}
+.display-page .display-fighter .team{font-size:clamp(15px,1.5vw,28px);line-height:1.1;margin-top:6px}
+.display-page .display-fighter .bigscore{min-height:0;display:grid;place-items:center;font-size:clamp(110px,30vh,285px);line-height:.8}
+.display-page .gesture-panel{margin-top:0;gap:8px;align-self:end}
+.display-page .gesture-card{min-height:94px;padding:5px 3px;align-content:center}
+.display-page .gesture-image{width:58px;height:58px}
+.display-page .gesture-card span{font-size:clamp(10px,.8vw,14px)}
+.display-page .dq-banner{margin-top:7px;padding:6px;font-size:clamp(18px,1.7vw,30px);line-height:1.1}
+.display-page .display-foot{font-size:clamp(14px,1.35vw,26px);padding:0;line-height:30px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-height:700px){
+  .display-page .display-wrap{grid-template-rows:74px minmax(0,1fr) 26px;padding:8px 12px;gap:7px}
+  .display-page .display-timer{font-size:54px}
+  .display-page .display-fighter .bigscore{font-size:clamp(90px,25vh,180px)}
+  .display-page .gesture-card{min-height:76px}
+  .display-page .gesture-image{width:44px;height:44px}
+  .display-page .dq-banner{font-size:17px;padding:4px}
+  .display-page .display-foot{line-height:26px}
+}

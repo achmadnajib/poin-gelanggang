@@ -1,5 +1,5 @@
 let match,tick,poll,lastPenaltySignature='',displayKey='';
-const q=new URLSearchParams(location.search).get('code');
+const displayParams=new URLSearchParams(location.search),q=displayParams.get('code'),initialDisplayKey=displayParams.get('key')||'';
 if(q)$('#code').value=q;
 
 $('#displayForm').onsubmit=e=>{
@@ -21,7 +21,7 @@ function leaveDisplay(message){
 
 async function start(code){
   try{
-    match=await api(`/api/public/match/${code}`);
+    match=await api(`/api/public/match/${code}${initialDisplayKey?`?key=${encodeURIComponent(initialDisplayKey)}`:''}`);
     displayKey=match.displayKey;
     $('#enter').classList.add('hidden');
     $('#screen').classList.remove('hidden');
