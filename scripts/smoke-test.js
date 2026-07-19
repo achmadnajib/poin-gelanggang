@@ -29,6 +29,11 @@ async function request(path, { method='GET', cookie, body }={}) {
   x=await request(`/api/matches/${m.id}/manual`,{method:'POST',cookie,body:{side:'red',type:'score',points:1}});assert.equal(x.r.status,409);
   x=await request(`/api/matches/${m.id}/export.pdf`,{cookie});assert.equal(x.r.status,200);assert.ok(x.data.byteLength>500);
   x=await request(`/api/matches/${m.id}/export.xlsx`,{cookie});assert.equal(x.r.status,200);assert.ok(x.data.byteLength>1000);
-  x=await request(`/api/matches/${m.id}/duplicate`,{method:'POST',cookie});assert.equal(x.r.status,200);assert.notEqual(x.data.code,m.code);
-  console.log(JSON.stringify({ok:true,base,matchCode:m.code,checks:23}));
+  x=await request(`/api/matches/${m.id}/duplicate`,{method:'POST',cookie});assert.equal(x.r.status,200);assert.notEqual(x.data.code,m.code);const duplicate=x.data;
+  x=await request(`/api/matches/${m.id}/archive`,{method:'POST',cookie,body:{password}});assert.equal(x.r.status,200);
+  x=await request(`/api/public/match/${m.code}`);assert.equal(x.r.status,404);
+  x=await request('/api/judge/join',{method:'POST',body:{code:m.code,slot:1,name:'J1',deviceId:'baru'}});assert.equal(x.r.status,400);
+  x=await request('/api/public/matches');assert.equal(x.r.status,200);assert.equal(x.data.some(item=>item.id===m.id),false);
+  x=await request(`/api/matches/${duplicate.id}/archive`,{method:'POST',cookie,body:{password}});assert.equal(x.r.status,200);
+  console.log(JSON.stringify({ok:true,base,matchCode:m.code,checks:28}));
 })().catch(e=>{console.error(e);process.exit(1)});

@@ -1,4 +1,5 @@
 ﻿let matches=[],current=null,tick,lastViewSignature='';
+const athleteMenu=document.createElement('a');athleteMenu.className='btn ghost';athleteMenu.href='/atlet';athleteMenu.target='_blank';athleteMenu.textContent='Daftar Atlet';$('#logout').before(athleteMenu);
 async function init(){const me=await api('/api/me');if(me){$('#login').classList.add('hidden');$('#app').classList.remove('hidden');load()} }
 setInterval(async()=>{try{if(current){const m=await api(`/api/public/match-id/${current.id}`),sig=JSON.stringify([m.status,m.round,m.red,m.blue,m.judges,m.events.length,m.validated.length,m.certified,m.winner]);current=m;if(sig!==lastViewSignature)renderMatch()}else if(!$('#app').classList.contains('hidden'))await load()}catch{}},900);
 $('#loginForm').onsubmit=async e=>{e.preventDefault();try{await api('/api/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});location.reload()}catch(x){toast(x.message,true)}};

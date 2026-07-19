@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Daftar Partai Atlet - Poin Gelanggang</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/atlet.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">POIN <i>GELANGGANG</i></div>
+    <span class="badge">INFORMASI ATLET</span>
+  </header>
+  <main class="container">
+    <div class="row spread athlete-title">
+      <div>
+        <h1 class="title">Daftar Partai dan Hasil</h1>
+        <p class="muted">Cari nama atlet, kontingen, kelas, atau nomor partai.</p>
+      </div>
+      <button class="btn ghost" id="refresh">Perbarui</button>
+    </div>
+    <div class="card">
+      <div class="row athlete-filter">
+        <input id="search" placeholder="Cari atlet atau partai...">
+        <select id="status">
+          <option value="">Semua status</option>
+          <option value="menunggu">Belum dimulai</option>
+          <option value="berlangsung">Berlangsung</option>
+          <option value="jeda">Jeda</option>
+          <option value="selesai">Selesai</option>
+        </select>
+      </div>
+      <div id="parties" class="athlete-list"></div>
+    </div>
+  </main>
+  <script src="/common.js"></script>
+  <script src="/atlet.js"></script>
+</body>
+</html>
